@@ -1,0 +1,20 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "Dock壁纸模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "Dock壁纸"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "Dock壁纸"
+    },
+    {
+      "name": "reason_write_imagevideo",
+      "value": "用于将生成的壁纸保存到相册"
+    }
+  ]
+}
