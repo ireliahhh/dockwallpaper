@@ -30,7 +30,7 @@ struct Index {
   private previewCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
 
   @State config: DockConfig = defaultConfig();
-  @State bg: BackgroundData = { pixelMap: undefined, imgW: 0, imgH: 0 };
+  @State bg: BackgroundData = { pixelMap: undefined, imgW: 0, imgH: 0, isScreenshot: false };
   @State saveBusy: boolean = false;
   @State previewW: number = 0;
   @State previewH: number = 0;
@@ -214,6 +214,7 @@ struct Index {
       // 操作按钮
       Row({ space: 10 }) {
         this.actionButton('选择图片', false, () => this.pickFromAlbum())
+        this.actionButton('桌面截图', false, () => this.pickScreenshot())
         this.actionButton('保存壁纸', false, () => this.onSaveToAlbum())
         this.actionButton('设为壁纸', true, () => this.onSetWallpaper())
       }
@@ -392,7 +393,8 @@ struct Index {
         this.bg = {
           pixelMap: pm,
           imgW: info.size.width,
-          imgH: info.size.height
+          imgH: info.size.height,
+          isScreenshot: false
         };
         this.scheduleRender();
       } finally {
@@ -404,6 +406,44 @@ struct Index {
     } catch (err) {
       hilog.error(0x0000, TAG, 'pick failed %{public}s', JSON.stringify(err));
       promptAction.showToast({ message: '选择图片失败，请重试' });
+    }
+  }
+
+  /** 从相册选择桌面截图：预览保留真实图标/壁纸，只叠加光感 Dock */
+  private async pickScreenshot(): Promise<void> {
+    try {
+      const picker = new photoAccessHelper.PhotoViewPicker();
+      const options = new photoAccessHelper.PhotoSelectOptions();
+      options.MIMEType = photoAccessHelper.PhotoViewMIMETypes.IMAGE_TYPE;
+      options.maxSelectNumber = 1;
+      const result = await picker.select(options);
+      if (result.photoUris.length === 0) {
+        return;
+      }
+      const uri: string = result.photoUris[0];
+      const file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      let source: image.ImageSource | undefined = undefined;
+      try {
+        source = image.createImageSource(file.fd);
+        const decodingOptions: image.DecodingOptions = { desiredSize: { width: 3000, height: 3000 } };
+        const pm: image.PixelMap = await source.createPixelMap(decodingOptions);
+        const info = await pm.getImageInfo();
+        this.bg = {
+          pixelMap: pm,
+          imgW: info.size.width,
+          imgH: info.size.height,
+          isScreenshot: true
+        };
+        this.scheduleRender();
+      } finally {
+        if (source !== undefined) {
+          source.release();
+        }
+        fs.closeSync(file);
+      }
+    } catch (err) {
+      hilog.error(0x0000, TAG, 'pick screenshot failed %{public}s', JSON.stringify(err));
+      promptAction.showToast({ message: '选择截图失败，请重试' });
     }
   }
 
@@ -430,6 +470,10 @@ struct Index {
     if (this.saveBusy) {
       return;
     }
+    if (this.bg.isScreenshot) {
+      promptAction.showToast({ message: '当前为桌面截图预览，请先点「选择图片」选取新壁纸再保存' });
+      return;
+    }
     this.saveBusy = true;
     try {
       const granted = await this.requestPermission('ohos.permission.WRITE_IMAGEVIDEO' as Permissions);
@@ -451,6 +495,10 @@ struct Index {
 
   private async onSetWallpaper(): Promise<void> {
     if (this.saveBusy) {
+      return;
+    }
+    if (this.bg.isScreenshot) {
+      promptAction.showToast({ message: '当前为桌面截图预览，请先点「选择图片」选取新壁纸再设置' });
       return;
     }
     this.saveBusy = true;
