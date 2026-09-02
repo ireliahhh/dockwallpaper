@@ -1,0 +1,35 @@
+name: Build DockWallpaper HAP
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: ghcr.io/sanchuanhehe/harmony-next-pipeline-docker/harmonyos-ci-image:v5.0.4
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 安装依赖 (ohpm)
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          ohpm install --all || true
+          cd entry
+          ohpm install --all || true
+
+      - name: 构建 HAP (debug)
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          hvigorw clean --no-daemon || true
+          hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon
+
+      - name: 上传 HAP 产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dockwallpaper-hap
+          path: entry/build/default/outputs/default/
+          if-no-files-found: error
