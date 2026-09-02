@@ -325,25 +325,25 @@ struct Index {
         Column({ space: 6 }) {
           this.sliderRow('高度', this.config.heightRatio, 0.10, 0.22, 0.01,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('heightRatio', v)))
+            (v: number) => this.updateDockField('heightRatio', v))
           this.sliderRow('留白', this.config.sideRatio, 0.04, 0.12, 0.005,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('sideRatio', v)))
+            (v: number) => this.updateDockField('sideRatio', v))
           this.sliderRow('圆角', this.config.cornerRatio, 0.15, 0.55, 0.01,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('cornerRatio', v)))
+            (v: number) => this.updateDockField('cornerRatio', v))
           this.sliderRow('透明度', this.config.opacity, 0.1, 0.8, 0.01,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('opacity', v)))
+            (v: number) => this.updateDockField('opacity', v))
           this.sliderRow('模糊', this.config.blur, 5, 80, 1,
             (v: number) => `${Math.round(v)}`,
-            (v: number) => this.updateDockField('blur', v)))
+            (v: number) => this.updateDockField('blur', v))
           this.sliderRow('高光', this.config.highlight, 0, 1, 0.02,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('highlight', v)))
+            (v: number) => this.updateDockField('highlight', v))
           this.sliderRow('光晕', this.config.glow, 0, 1, 0.02,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('glow', v)))
+            (v: number) => this.updateDockField('glow', v))
         }
         .width('100%')
         .padding({ left: 18, right: 18, top: 4, bottom: 10 })
