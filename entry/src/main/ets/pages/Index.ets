@@ -1,21 +1,27 @@
 /**
- * 主界面：沉浸光感风格 + 悬浮底栏控制面板
- *  - 全屏沉浸式光感背景
- *  - 实时壁纸预览（毛玻璃 Dock 沉浸光感）
- *  - 悬浮毛玻璃控制面板（背景 / Dock 光感）
- *  - 一键保存到相册 / 设为壁纸
+ * 主界面：Dock壁纸 —— 沉浸光感风格
+ *  - 全屏沉浸光感背景
+ *  - 手机桌面实时预览（壁纸 + 桌面图标 + 光感 Dock）
+ *  - 悬浮光感控制面板：两种效果切换（鸿蒙光感 / 液态玻璃）+ 参数滑杆
+ *  - 从图库选择照片作为壁纸背景
+ *  - 一键保存壁纸到相册 / 设为系统壁纸
+ *
+ * 说明：鸿蒙 7.0 (API 26) 的官方沉浸光感 systemMaterial 待 CI 升级后接入，
+ * 当前版本以渲染引擎实现同质感光效，代码已按升级预留。
  */
 import { common, abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
 import { display, promptAction } from '@kit.ArkUI';
 import { image } from '@kit.ImageKit';
+import { fileIo as fs } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
-import { DockConfig, defaultConfig, cloneConfig } from '../model/DockConfig';
-import { COLOR_PRESETS, GRADIENT_PRESETS, DOCK_PRESETS, DockPreset, WALLPAPER_RATIO } from '../common/Constants';
-import { BackgroundData, renderDockWallpaper } from '../utils/DockRenderer';
+import { DockConfig, defaultConfig, cloneConfig, DockStyle } from '../model/DockConfig';
+import { BackgroundData, renderDesktopPreview, renderWallpaper } from '../utils/DockRenderer';
 import { saveWallpaperToAlbum, setAsWallpaper } from '../utils/WallpaperService';
 
 const TAG: string = 'DockWallpaper';
+/** 手机模拟屏宽高比（9:19） */
+const PHONE_RATIO: number = 9 / 19;
 
 @Entry
 @Component
@@ -24,17 +30,7 @@ struct Index {
   private previewCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
 
   @State config: DockConfig = defaultConfig();
-  @State bg: BackgroundData = {
-    mode: 'color',
-    color: COLOR_PRESETS[0],
-    gradientIndex: 0,
-    pixelMap: undefined,
-    imgW: 0,
-    imgH: 0
-  };
-  @State bgMode: number = 0;
-  @State activeTab: number = 0;
-  @State dockPresetIndex: number = 0;
+  @State bg: BackgroundData = { pixelMap: undefined, imgW: 0, imgH: 0 };
   @State saveBusy: boolean = false;
   @State previewW: number = 0;
   @State previewH: number = 0;
@@ -51,43 +47,22 @@ struct Index {
       Column() {
         this.buildHeader()
 
-        // 实时预览卡片
-        Stack() {
-          Canvas(this.previewCtx)
-            .width('100%')
-            .height('100%')
-            .onReady(() => this.onPreviewReady())
-        }
-        .layoutWeight(1)
-        .width('100%')
-        .margin({ top: 14, bottom: 14 })
-        .borderRadius(34)
-        .clip(true)
-        .border({ width: 1, color: 'rgba(255,255,255,0.14)' })
-        .shadow({ radius: 36, color: 'rgba(0,0,0,0.5)', offsetY: 10 })
-        .onAreaChange((oldValue: Area, newValue: Area) => {
-          const w = Number(newValue.width);
-          const h = Number(newValue.height);
-          if (w > 0 && h > 0 && (w !== this.previewW || h !== this.previewH)) {
-            this.previewW = w;
-            this.previewH = h;
-            this.scheduleRender();
-          }
-        })
+        // 手机桌面实时预览
+        this.buildPhonePreview()
 
-        // 悬浮光感控制底栏
+        // 悬浮光感控制面板
         this.buildPanel()
       }
       .width('100%')
       .height('100%')
-      .padding({ top: 48, bottom: 22, left: 14, right: 14 })
+      .padding({ top: 48, bottom: 18, left: 14, right: 14 })
     }
     .width('100%')
     .height('100%')
     .backgroundColor('#070A16')
   }
 
-  // ===================== 界面构建 =====================
+  // ===================== 背景 =====================
 
   @Builder
   buildBackdrop() {
@@ -95,39 +70,41 @@ struct Index {
       Column()
         .width('100%')
         .height('100%')
-        .linearGradient({ angle: 180, colors: [['#0A0D1C', 0], ['#141B3C', 0.55], ['#221545', 1]] })
+        .linearGradient({ angle: 180, colors: [['#0A0D1C', 0], ['#151A3A', 0.5], ['#221545', 1]] })
 
       // 顶部光晕
       Column()
-        .width(340)
-        .height(340)
-        .borderRadius(170)
-        .backgroundColor('rgba(110,150,255,0.22)')
+        .width(360)
+        .height(360)
+        .borderRadius(180)
+        .backgroundColor('rgba(110,150,255,0.20)')
         .blur(90)
-        .position({ x: -100, y: -80 })
+        .position({ x: -120, y: -90 })
 
-      // 右侧光晕
+      // 右下光晕
       Column()
         .width(320)
         .height(320)
         .borderRadius(160)
-        .backgroundColor('rgba(190,110,255,0.16)')
+        .backgroundColor('rgba(190,110,255,0.15)')
         .blur(100)
-        .position({ x: 220, y: 400 })
+        .position({ x: 230, y: 560 })
     }
     .width('100%')
     .height('100%')
   }
 
+  // ===================== 头部 =====================
+
   @Builder
   buildHeader() {
     Row() {
       Column() {
-        Text('光感 Dock 壁纸')
-          .fontSize(22)
+        Text('Dock壁纸')
+          .fontSize(24)
           .fontWeight(FontWeight.Bold)
           .fontColor('#FFFFFF')
-        Text('iOS 风格毛玻璃 Dock · 一键生成')
+        Text('鸿蒙专属 Dock 壁纸生成')
           .fontSize(12)
           .fontColor('rgba(255,255,255,0.5)')
           .margin({ top: 4 })
@@ -136,7 +113,7 @@ struct Index {
 
       Blank()
 
-      Text('鸿蒙沉浸光感')
+      Text('沉浸光感')
         .fontSize(10)
         .fontColor('#FFFFFF')
         .padding({ left: 10, right: 10, top: 5, bottom: 5 })
@@ -147,38 +124,96 @@ struct Index {
     .width('100%')
   }
 
+  // ===================== 手机预览 =====================
+
+  @Builder
+  buildPhonePreview() {
+    Stack() {
+      // 手机模拟屏
+      Canvas(this.previewCtx)
+        .width('100%')
+        .height('100%')
+        .onReady(() => this.onPreviewReady())
+
+      // 未选图时的引导
+      if (this.bg.pixelMap === undefined) {
+        Column() {
+          Text('轻触下方「选择图片」')
+            .fontSize(12)
+            .fontColor('rgba(255,255,255,0.55)')
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .backgroundColor('rgba(0,0,0,0.30)')
+            .borderRadius(14)
+        }
+        .width('100%')
+        .position({ y: '60%' })
+      }
+    }
+    .layoutWeight(1)
+    .width('100%')
+    .borderRadius(30)
+    .clip(true)
+    .border({ width: 1, color: 'rgba(255,255,255,0.16)' })
+    .shadow({ radius: 40, color: 'rgba(0,0,0,0.55)', offsetY: 12 })
+    .margin({ top: 14, bottom: 14 })
+    .onAreaChange((oldValue: Area, newValue: Area) => {
+      const w = Number(newValue.width);
+      const h = Number(newValue.height);
+      if (w > 0 && h > 0 && (w !== this.previewW || h !== this.previewH)) {
+        this.previewW = w;
+        this.previewH = h;
+        this.scheduleRender();
+      }
+    })
+  }
+
+  // ===================== 控制面板 =====================
+
   @Builder
   buildPanel() {
     Column() {
-      // Tab 行
+      // 效果切换（仅两种）
       Row({ space: 8 }) {
-        this.tabChip(0, '背景')
-        this.tabChip(1, 'Dock 光感')
-        Blank()
-        Text('实时预览')
-          .fontSize(10)
-          .fontColor('rgba(255,255,255,0.5)')
-          .padding({ left: 10, right: 10, top: 4, bottom: 4 })
-          .backgroundColor('rgba(255,255,255,0.08)')
-          .borderRadius(12)
+        this.modeChip('harmony', '鸿蒙光感')
+        this.modeChip('liquid', '液态玻璃')
       }
       .width('100%')
       .padding({ left: 18, right: 18, top: 14 })
 
-      // 内容区
-      if (this.activeTab === 0) {
-        this.buildBgContent()
-      } else {
-        this.buildDockContent()
+      // 参数滑杆
+      Scroll() {
+        Column({ space: 4 }) {
+          this.sliderRow('高度', this.config.heightRatio, 0.10, 0.22, 0.01,
+            (v: number) => `${Math.round(v * 100)}%`,
+            (v: number) => this.updateDockField('heightRatio', v))
+          this.sliderRow('位置', this.config.bottomRatio, 0.02, 0.08, 0.005,
+            (v: number) => `${Math.round(v * 100)}%`,
+            (v: number) => this.updateDockField('bottomRatio', v))
+          this.sliderRow('圆角', this.config.cornerRatio, 0.2, 0.55, 0.01,
+            (v: number) => `${Math.round(v * 100)}%`,
+            (v: number) => this.updateDockField('cornerRatio', v))
+          this.sliderRow('透明', this.config.opacity, 0.1, 0.8, 0.01,
+            (v: number) => `${Math.round(v * 100)}%`,
+            (v: number) => this.updateDockField('opacity', v))
+          this.sliderRow('模糊', this.config.blur, 5, 80, 1,
+            (v: number) => `${Math.round(v)}`,
+            (v: number) => this.updateDockField('blur', v))
+        }
+        .width('100%')
+        .padding({ left: 18, right: 18, top: 6, bottom: 4 })
       }
+      .width('100%')
+      .height(148)
+      .scrollBar(BarState.Auto)
 
       // 操作按钮
       Row({ space: 10 }) {
-        this.actionButton('保存到相册', false, () => this.onSaveToAlbum())
+        this.actionButton('选择图片', false, () => this.pickFromAlbum())
+        this.actionButton('保存壁纸', false, () => this.onSaveToAlbum())
         this.actionButton('设为壁纸', true, () => this.onSetWallpaper())
       }
       .width('100%')
-      .padding({ left: 18, right: 18, top: 12, bottom: 16 })
+      .padding({ left: 18, right: 18, top: 10, bottom: 16 })
     }
     .width('100%')
     .borderRadius(30)
@@ -189,170 +224,17 @@ struct Index {
   }
 
   @Builder
-  tabChip(index: number, label: string) {
+  modeChip(style: DockStyle, label: string) {
     Text(label)
-      .fontSize(13)
-      .fontColor(this.activeTab === index ? '#10121E' : 'rgba(255,255,255,0.85)')
-      .fontWeight(this.activeTab === index ? FontWeight.Medium : FontWeight.Normal)
-      .padding({ left: 16, right: 16, top: 7, bottom: 7 })
-      .backgroundColor(this.activeTab === index ? '#FFFFFF' : 'rgba(255,255,255,0.08)')
-      .borderRadius(18)
+      .fontSize(14)
+      .fontWeight(this.config.style === style ? FontWeight.Medium : FontWeight.Normal)
+      .fontColor(this.config.style === style ? '#10121E' : 'rgba(255,255,255,0.85)')
+      .padding({ left: 18, right: 18, top: 8, bottom: 8 })
+      .backgroundColor(this.config.style === style ? '#FFFFFF' : 'rgba(255,255,255,0.08)')
+      .borderRadius(20)
       .onClick(() => {
-        this.activeTab = index;
+        this.switchStyle(style);
       })
-  }
-
-  @Builder
-  buildBgContent() {
-    Column({ space: 12 }) {
-      Row({ space: 8 }) {
-        this.modeChip(0, '纯色')
-        this.modeChip(1, '渐变')
-        this.modeChip(2, '相册')
-      }
-      .width('100%')
-      .padding({ left: 18, right: 18, top: 12 })
-
-      if (this.bgMode === 0) {
-        this.buildColorSwatches()
-      } else if (this.bgMode === 1) {
-        this.buildGradientSwatches()
-      } else {
-        Row() {
-          Button('从相册选择图片', { type: ButtonType.Capsule })
-            .height(40)
-            .fontSize(13)
-            .fontColor('#FFFFFF')
-            .backgroundColor('rgba(255,255,255,0.14)')
-            .border({ width: 1, color: 'rgba(255,255,255,0.25)' })
-            .onClick(() => this.pickFromAlbum())
-        }
-        .width('100%')
-        .padding({ left: 18, right: 18, top: 4, bottom: 12 })
-      }
-    }
-    .width('100%')
-  }
-
-  @Builder
-  modeChip(index: number, label: string) {
-    Text(label)
-      .fontSize(12)
-      .fontColor(this.bgMode === index ? '#FFFFFF' : 'rgba(255,255,255,0.6)')
-      .padding({ left: 14, right: 14, top: 6, bottom: 6 })
-      .backgroundColor(this.bgMode === index ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)')
-      .borderRadius(16)
-      .border({ width: 1, color: this.bgMode === index ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.1)' })
-      .onClick(() => {
-        this.bgMode = index;
-      })
-  }
-
-  @Builder
-  buildColorSwatches() {
-    Row({ space: 10 }) {
-      ForEach(COLOR_PRESETS, (color: string, index: number) => {
-        Column()
-          .width(32)
-          .height(32)
-          .borderRadius(16)
-          .backgroundColor(color)
-          .border({
-            width: this.bg.mode === 'color' && this.bg.color === color ? 2 : 1,
-            color: this.bg.mode === 'color' && this.bg.color === color ? '#FFFFFF' : 'rgba(255,255,255,0.25)'
-          })
-          .onClick(() => {
-            this.bgMode = 0;
-            this.bg = { mode: 'color', color: color, gradientIndex: this.bg.gradientIndex, pixelMap: undefined, imgW: 0, imgH: 0 };
-            this.scheduleRender();
-          })
-      }, (color: string, index: number) => index.toString())
-    }
-    .width('100%')
-    .padding({ left: 18, right: 18, bottom: 12 })
-  }
-
-  @Builder
-  buildGradientSwatches() {
-    Row({ space: 10 }) {
-      ForEach(GRADIENT_PRESETS, (grad: string[], index: number) => {
-        Column()
-          .width(32)
-          .height(32)
-          .borderRadius(12)
-          .linearGradient({ angle: 135, colors: [[grad[0], 0], [grad[1], 1]] })
-          .border({
-            width: this.bg.mode === 'gradient' && this.bg.gradientIndex === index ? 2 : 1,
-            color: this.bg.mode === 'gradient' && this.bg.gradientIndex === index ? '#FFFFFF' : 'rgba(255,255,255,0.25)'
-          })
-          .onClick(() => {
-            this.bgMode = 1;
-            this.bg = { mode: 'gradient', color: this.bg.color, gradientIndex: index, pixelMap: undefined, imgW: 0, imgH: 0 };
-            this.scheduleRender();
-          })
-      }, (grad: string[], index: number) => index.toString())
-    }
-    .width('100%')
-    .padding({ left: 18, right: 18, bottom: 12 })
-  }
-
-  @Builder
-  buildDockContent() {
-    Column() {
-      // 预设模板
-      Scroll() {
-        Row({ space: 8 }) {
-          ForEach(DOCK_PRESETS, (preset: DockPreset, index: number) => {
-            Text(preset.name)
-              .fontSize(12)
-              .fontColor(this.dockPresetIndex === index ? '#10121E' : 'rgba(255,255,255,0.85)')
-              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-              .backgroundColor(this.dockPresetIndex === index ? '#FFFFFF' : 'rgba(255,255,255,0.10)')
-              .borderRadius(16)
-              .onClick(() => this.applyPreset(index))
-          }, (preset: DockPreset, index: number) => index.toString())
-        }
-        .width('100%')
-      }
-      .width('100%')
-      .height(40)
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .padding({ left: 18, right: 18, top: 12 })
-
-      // 参数滑杆
-      Scroll() {
-        Column({ space: 6 }) {
-          this.sliderRow('高度', this.config.heightRatio, 0.10, 0.22, 0.01,
-            (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('heightRatio', v))
-          this.sliderRow('留白', this.config.sideRatio, 0.04, 0.12, 0.005,
-            (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('sideRatio', v))
-          this.sliderRow('圆角', this.config.cornerRatio, 0.15, 0.55, 0.01,
-            (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('cornerRatio', v))
-          this.sliderRow('透明度', this.config.opacity, 0.1, 0.8, 0.01,
-            (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('opacity', v))
-          this.sliderRow('模糊', this.config.blur, 5, 80, 1,
-            (v: number) => `${Math.round(v)}`,
-            (v: number) => this.updateDockField('blur', v))
-          this.sliderRow('高光', this.config.highlight, 0, 1, 0.02,
-            (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('highlight', v))
-          this.sliderRow('光晕', this.config.glow, 0, 1, 0.02,
-            (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('glow', v))
-        }
-        .width('100%')
-        .padding({ left: 18, right: 18, top: 4, bottom: 10 })
-      }
-      .width('100%')
-      .height(150)
-      .scrollBar(BarState.Auto)
-    }
-    .width('100%')
   }
 
   @Builder
@@ -369,7 +251,7 @@ struct Index {
       Text(title)
         .fontSize(12)
         .fontColor('rgba(255,255,255,0.75)')
-        .width(48)
+        .width(40)
         .textAlign(TextAlign.Start)
       Slider({ value: current, min: min, max: max, step: step, style: SliderStyle.OutSet })
         .layoutWeight(1)
@@ -382,19 +264,19 @@ struct Index {
       Text(display(current))
         .fontSize(11)
         .fontColor('rgba(255,255,255,0.6)')
-        .width(46)
+        .width(40)
         .textAlign(TextAlign.End)
     }
     .width('100%')
-    .height(34)
+    .height(32)
   }
 
   @Builder
   actionButton(label: string, filled: boolean, onClick: () => void) {
     Button(label, { type: ButtonType.Capsule })
       .layoutWeight(1)
-      .height(44)
-      .fontSize(14)
+      .height(42)
+      .fontSize(13)
       .fontWeight(FontWeight.Medium)
       .fontColor(filled ? '#10121E' : '#FFFFFF')
       .backgroundColor(filled ? '#FFFFFF' : 'rgba(255,255,255,0.12)')
@@ -419,6 +301,7 @@ struct Index {
     }, 80);
   }
 
+  /** 实时渲染手机桌面预览（壁纸 + 图标 + Dock） */
   private async doRender(): Promise<void> {
     if (!this.ready || this.previewW <= 0 || this.previewH <= 0) {
       return;
@@ -427,14 +310,14 @@ struct Index {
     const pw = this.previewW;
     const ph = this.previewH;
     try {
-      // 按壁纸比例在预览区内等比适配（居中）
+      // 按手机屏比例等比适配（居中）
       let rw = pw;
-      let rh = pw / WALLPAPER_RATIO;
+      let rh = pw / PHONE_RATIO;
       if (rh > ph) {
         rh = ph;
-        rw = ph * WALLPAPER_RATIO;
+        rw = ph * PHONE_RATIO;
       }
-      const pm: image.PixelMap = await renderDockWallpaper(
+      const pm: image.PixelMap = await renderDesktopPreview(
         Math.max(1, Math.round(rw)),
         Math.max(1, Math.round(rh)),
         this.config,
@@ -453,13 +336,19 @@ struct Index {
     }
   }
 
+  private switchStyle(style: DockStyle): void {
+    const c: DockConfig = cloneConfig(this.config);
+    c.style = style;
+    this.config = c;
+    this.scheduleRender();
+  }
+
   private updateDockField(field: string, value: number): void {
-    this.dockPresetIndex = -1;
     const c: DockConfig = cloneConfig(this.config);
     if (field === 'heightRatio') {
       c.heightRatio = value;
-    } else if (field === 'sideRatio') {
-      c.sideRatio = value;
+    } else if (field === 'bottomRatio') {
+      c.bottomRatio = value;
     } else if (field === 'cornerRatio') {
       c.cornerRatio = value;
     } else if (field === 'opacity') {
@@ -475,12 +364,7 @@ struct Index {
     this.scheduleRender();
   }
 
-  private applyPreset(index: number): void {
-    this.dockPresetIndex = index;
-    this.config = cloneConfig(DOCK_PRESETS[index].config);
-    this.scheduleRender();
-  }
-
+  /** 从图库选择照片（fd 方式读取，兼容各类图片格式） */
   private async pickFromAlbum(): Promise<void> {
     try {
       const picker = new photoAccessHelper.PhotoViewPicker();
@@ -492,23 +376,29 @@ struct Index {
         return;
       }
       const uri: string = result.photoUris[0];
-      const source = image.createImageSource(uri);
-      const decodingOptions: image.DecodingOptions = { desiredSize: { width: 2048, height: 2048 } };
-      const pm: image.PixelMap = await source.createPixelMap(decodingOptions);
-      const info = await pm.getImageInfo();
-      this.bg = {
-        mode: 'album',
-        color: this.bg.color,
-        gradientIndex: this.bg.gradientIndex,
-        pixelMap: pm,
-        imgW: info.size.width,
-        imgH: info.size.height
-      };
-      this.bgMode = 2;
-      this.scheduleRender();
+      // 用 fd 打开，比直接传 uri 更稳（兼容 HEIC / 云图 / 其他应用图片）
+      const file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
+      let source: image.ImageSource | undefined = undefined;
+      try {
+        source = image.createImageSource(file.fd);
+        const decodingOptions: image.DecodingOptions = { desiredSize: { width: 3000, height: 3000 } };
+        const pm: image.PixelMap = await source.createPixelMap(decodingOptions);
+        const info = await pm.getImageInfo();
+        this.bg = {
+          pixelMap: pm,
+          imgW: info.size.width,
+          imgH: info.size.height
+        };
+        this.scheduleRender();
+      } finally {
+        if (source !== undefined) {
+          source.release();
+        }
+        fs.closeSync(file);
+      }
     } catch (err) {
       hilog.error(0x0000, TAG, 'pick failed %{public}s', JSON.stringify(err));
-      promptAction.showToast({ message: '选择图片失败' });
+      promptAction.showToast({ message: '选择图片失败，请重试' });
     }
   }
 
@@ -523,11 +413,12 @@ struct Index {
     }
   }
 
+  /** 生成高清壁纸（仅背景 + Dock，不含图标） */
   private async renderFullWallpaper(): Promise<image.PixelMap> {
     const d = display.getDefaultDisplaySync();
     const w: number = d.width;
     const h: number = d.height;
-    return renderDockWallpaper(w, h, this.config, this.bg);
+    return renderWallpaper(w, h, this.config, this.bg);
   }
 
   private async onSaveToAlbum(): Promise<void> {
@@ -544,7 +435,7 @@ struct Index {
       const ctx = getContext(this) as common.UIAbilityContext;
       const pm: image.PixelMap = await this.renderFullWallpaper();
       await saveWallpaperToAlbum(ctx, pm);
-      promptAction.showToast({ message: '已保存到相册' });
+      promptAction.showToast({ message: '壁纸已保存到相册' });
     } catch (err) {
       hilog.error(0x0000, TAG, 'save failed %{public}s', JSON.stringify(err));
       promptAction.showToast({ message: '保存失败' });

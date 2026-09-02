@@ -21,7 +21,7 @@ export async function packToFile(
   const filePath: string = `${dir}/${name}`;
   const packer: image.ImagePacker = image.createImagePacker();
   const packingOption: image.PackingOption = { format: format, quality: 100 };
-  const data: ArrayBuffer = await packer.packing(pixelMap, packingOption);
+  const data: ArrayBuffer = packer.packingSync(pixelMap, packingOption);
   const file = fs.openSync(filePath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE);
   fs.writeSync(file.fd, data);
   fs.closeSync(file);
@@ -37,7 +37,7 @@ export async function saveWallpaperToAlbum(
   const cachePath: string = `${context.cacheDir}/wallpaper_export_${Date.now()}.jpg`;
   const packer: image.ImagePacker = image.createImagePacker();
   const packingOption: image.PackingOption = { format: 'image/jpeg', quality: 96 };
-  const data: ArrayBuffer = await packer.packing(pixelMap, packingOption);
+  const data: ArrayBuffer = packer.packingSync(pixelMap, packingOption);
   const tmpFile = fs.openSync(cachePath, fs.OpenMode.CREATE | fs.OpenMode.READ_WRITE);
   fs.writeSync(tmpFile.fd, data);
   fs.closeSync(tmpFile);

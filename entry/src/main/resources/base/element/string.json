@@ -2,15 +2,15 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "光感Dock壁纸模块"
+      "value": "Dock壁纸模块"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "光感Dock壁纸"
+      "value": "Dock壁纸"
     },
     {
       "name": "EntryAbility_label",
-      "value": "光感Dock壁纸"
+      "value": "Dock壁纸"
     },
     {
       "name": "reason_write_imagevideo",

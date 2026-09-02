@@ -1,23 +1,19 @@
 /**
  * Dock 壁纸渲染引擎
- * 基于 OffscreenCanvas + effectKit 实现「沉浸光感」毛玻璃 Dock：
- *  - 背景（纯色 / 渐变 / 相册图）
- *  - 高斯模糊玻璃层（真实背景模糊）
- *  - 半透明玻璃基色
- *  - 顶部高光渐变（模拟玻璃边缘反光）
- *  - 底部柔光光晕
- * 同一引擎同时服务「实时预览」与「高清导出」。
+ * 支持两种光感风格：
+ *  - harmony「鸿蒙光感」：类鸿蒙 7.0 沉浸光感 —— 冷调通透玻璃、柔和环境光晕、细腻边缘光线勾勒
+ *  - liquid「液态玻璃」：iOS 液态玻璃 —— 高亮边缘、玻璃内景深、彩色透光、顶部镜面反光
+ * 同一引擎服务「实时桌面预览」（壁纸+图标+Dock）与「高清导出」（壁纸+Dock）。
+ *
+ * 说明：鸿蒙 7.0 (API 26) 官方沉浸光感接口 systemMaterial 仅用于运行时 UI 材质；
+ * 壁纸图片上的光感由本引擎在 Canvas 中渲染。工程已按 API 26 预留升级空间。
  */
 import { image } from '@kit.ImageKit';
 import { effectKit } from '@kit.ArkGraphics2D';
 import { DockConfig } from '../model/DockConfig';
-import { GRADIENT_PRESETS } from '../common/Constants';
 
 /** 背景数据 */
 export interface BackgroundData {
-  mode: 'color' | 'gradient' | 'album';
-  color: string;
-  gradientIndex: number;
   pixelMap: image.PixelMap | undefined;
   imgW: number;
   imgH: number;
@@ -31,8 +27,12 @@ interface DockRect {
   radius: number;
 }
 
-/** 生成一张 Dock 壁纸，返回 PixelMap */
-export async function renderDockWallpaper(
+/** 默认壁纸渐变背景（未选图时的占位） */
+const DEFAULT_BG_TOP: string = '#141B3C';
+const DEFAULT_BG_BOTTOM: string = '#221545';
+
+/** 生成一张桌面预览图（壁纸 + 状态栏 + 图标网格 + 光感 Dock），返回 PixelMap */
+export async function renderDesktopPreview(
   width: number,
   height: number,
   config: DockConfig,
@@ -41,10 +41,10 @@ export async function renderDockWallpaper(
   const offscreen: OffscreenCanvas = new OffscreenCanvas(width, height);
   const ctx: OffscreenCanvasRenderingContext2D = offscreen.getContext('2d');
 
-  // 1. 绘制背景
+  // 1. 绘制背景壁纸
   drawBackground(ctx, width, height, bg);
 
-  // 2. 生成整图高斯模糊副本（用于玻璃透感）
+  // 2. 生成整图高斯模糊副本（玻璃透感用）
   let blurred: image.PixelMap | undefined = undefined;
   if (config.blur > 2) {
     const bgPixel: image.PixelMap = ctx.getPixelMap(0, 0, width, height);
@@ -55,30 +55,58 @@ export async function renderDockWallpaper(
     }
   }
 
-  // 3. 计算 Dock 区域并绘制玻璃光感
+  // 3. 绘制状态栏
+  drawStatusBar(ctx, width);
+
+  // 4. 绘制桌面图标网格
+  drawIconGrid(ctx, width, height);
+
+  // 5. 绘制光感 Dock（含 Dock 图标）
+  const dock: DockRect = computeDockRect(width, height, config);
+  drawDockGlass(ctx, dock, blurred, config, width, height);
+  drawDockIcons(ctx, dock, width);
+
+  return ctx.getPixelMap(0, 0, width, height);
+}
+
+/** 生成一张高清壁纸（仅背景 + 光感 Dock，不含图标），返回 PixelMap */
+export async function renderWallpaper(
+  width: number,
+  height: number,
+  config: DockConfig,
+  bg: BackgroundData
+): Promise<image.PixelMap> {
+  const offscreen: OffscreenCanvas = new OffscreenCanvas(width, height);
+  const ctx: OffscreenCanvasRenderingContext2D = offscreen.getContext('2d');
+
+  drawBackground(ctx, width, height, bg);
+
+  let blurred: image.PixelMap | undefined = undefined;
+  if (config.blur > 2) {
+    const bgPixel: image.PixelMap = ctx.getPixelMap(0, 0, width, height);
+    const filter = effectKit.createEffect(bgPixel);
+    if (filter !== null) {
+      filter.blur(config.blur);
+      blurred = await filter.getEffectPixelMap();
+    }
+  }
+
   const dock: DockRect = computeDockRect(width, height, config);
   drawDockGlass(ctx, dock, blurred, config, width, height);
 
-  // 4. 返回结果位图
   return ctx.getPixelMap(0, 0, width, height);
 }
 
 /** 绘制背景层 */
 function drawBackground(ctx: OffscreenCanvasRenderingContext2D, width: number, height: number, bg: BackgroundData): void {
-  if (bg.mode === 'album' && bg.pixelMap !== undefined && bg.imgW > 0 && bg.imgH > 0) {
+  if (bg.pixelMap !== undefined && bg.imgW > 0 && bg.imgH > 0) {
     drawCoverImage(ctx, bg.pixelMap, bg.imgW, bg.imgH, width, height);
     return;
   }
-  if (bg.mode === 'gradient') {
-    const stops: string[] = GRADIENT_PRESETS[bg.gradientIndex] !== undefined ? GRADIENT_PRESETS[bg.gradientIndex] : GRADIENT_PRESETS[0];
-    const grad: CanvasGradient = ctx.createLinearGradient(0, 0, 0, height);
-    grad.addColorStop(0, stops[0]);
-    grad.addColorStop(1, stops[1]);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, width, height);
-    return;
-  }
-  ctx.fillStyle = bg.color;
+  const grad: CanvasGradient = ctx.createLinearGradient(0, 0, 0, height);
+  grad.addColorStop(0, DEFAULT_BG_TOP);
+  grad.addColorStop(1, DEFAULT_BG_BOTTOM);
+  ctx.fillStyle = grad;
   ctx.fillRect(0, 0, width, height);
 }
 
@@ -99,6 +127,112 @@ function drawCoverImage(
   ctx.drawImage(pm, sx, sy, sw, sh, 0, 0, dw, dh);
 }
 
+/** 状态栏：时间 + 信号 + 电量（仅预览用） */
+function drawStatusBar(ctx: OffscreenCanvasRenderingContext2D, width: number): void {
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.font = '500 ' + Math.max(10, Math.round(width * 0.026)) + 'px sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'left';
+  ctx.fillText('9:41', width * 0.05, width * 0.075);
+  ctx.textAlign = 'right';
+  ctx.fillText('100%', width * 0.9, width * 0.075);
+  // 信号条
+  const cx: number = width * 0.84;
+  const cy: number = width * 0.075;
+  for (let i = 0; i < 4; i++) {
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillRect(cx + i * width * 0.018, cy + (3 - i) * width * 0.008, width * 0.012, (i + 1) * width * 0.008);
+  }
+}
+
+/** 桌面图标网格（仅预览用） */
+function drawIconGrid(ctx: OffscreenCanvasRenderingContext2D, width: number, height: number): void {
+  const cols: number = 4;
+  const rows: number = 5;
+  const gap: number = width * 0.05;
+  const iconSize: number = width * 0.15;
+  const startX: number = (width - (cols * iconSize + (cols - 1) * gap)) / 2;
+  const topY: number = height * 0.16;
+  const rowGap: number = width * 0.155;
+  const glyphs: number[] = [0, 1, 2, 3];
+  const colors: string[][] = [
+    ['#5B8DEF', '#8FB6FF'],
+    ['#F2788F', '#FFB3C1'],
+    ['#5BC8A6', '#8FE3C6'],
+    ['#B08BFF', '#D0B8FF']
+  ];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x: number = startX + c * (iconSize + gap);
+      const y: number = topY + r * rowGap;
+      const g: number = glyphs[(r + c) % 4];
+      const col: string[] = colors[(r + c) % 4];
+      drawAppIcon(ctx, x, y, iconSize, g, col, width);
+    }
+  }
+}
+
+/** 单个应用图标（圆角方块 + 简单图形 + 名称） */
+function drawAppIcon(
+  ctx: OffscreenCanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  glyph: number,
+  col: string[],
+  width: number
+): void {
+  const radius: number = size * 0.22;
+  const grad: CanvasGradient = ctx.createLinearGradient(x, y, x + size, y + size);
+  grad.addColorStop(0, col[0]);
+  grad.addColorStop(1, col[1]);
+  ctx.save();
+  ctx.beginPath();
+  roundRectPath(ctx, x, y, size, size, radius);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  // 顶部微光
+  ctx.beginPath();
+  roundRectPath(ctx, x, y, size, size, radius);
+  const gloss: CanvasGradient = ctx.createLinearGradient(0, y, 0, y + size * 0.55);
+  gloss.addColorStop(0, 'rgba(255,255,255,0.35)');
+  gloss.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = gloss;
+  ctx.fill();
+  // 简单图形
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  const gx: number = x + size / 2;
+  const gy: number = y + size * 0.46;
+  if (glyph === 0) {
+    ctx.beginPath();
+    ctx.arc(gx, gy, size * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (glyph === 1) {
+    ctx.beginPath();
+    ctx.arc(gx, gy, size * 0.16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(gx - size * 0.05, gy - size * 0.26, size * 0.1, size * 0.52);
+  } else if (glyph === 2) {
+    ctx.beginPath();
+    ctx.arc(gx, gy, size * 0.18, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(gx, gy - size * 0.18);
+    ctx.lineTo(gx + size * 0.18, gy + size * 0.16);
+    ctx.lineTo(gx - size * 0.18, gy + size * 0.16);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+  // 名称
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = '400 ' + Math.max(8, Math.round(width * 0.022)) + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillText('App', x + size / 2, y + size + width * 0.02);
+}
+
 /** 计算 Dock 圆角矩形区域 */
 function computeDockRect(width: number, height: number, config: DockConfig): DockRect {
   const dockH: number = height * config.heightRatio;
@@ -113,7 +247,7 @@ function computeDockRect(width: number, height: number, config: DockConfig): Doc
   };
 }
 
-/** 绘制毛玻璃 Dock 沉浸光感 */
+/** 绘制光感 Dock 玻璃（按风格分支） */
 function drawDockGlass(
   ctx: OffscreenCanvasRenderingContext2D,
   dock: DockRect,
@@ -122,64 +256,195 @@ function drawDockGlass(
   fullW: number,
   fullH: number
 ): void {
-  // ---- 玻璃主体（裁剪在圆角内） ----
+  if (config.style === 'liquid') {
+    drawLiquidDock(ctx, dock, blurred, config, fullW, fullH);
+  } else {
+    drawHarmonyDock(ctx, dock, blurred, config, fullW, fullH);
+  }
+}
+
+/** 鸿蒙光感 Dock：冷调通透玻璃 + 柔和光晕 + 细腻光线 */
+function drawHarmonyDock(
+  ctx: OffscreenCanvasRenderingContext2D,
+  dock: DockRect,
+  blurred: image.PixelMap | undefined,
+  config: DockConfig,
+  fullW: number,
+  fullH: number
+): void {
+  // 背后环境光晕（柔和扩散）
+  const auraR: number = dock.width * 0.62;
+  const aura: CanvasGradient = ctx.createRadialGradient(
+    dock.x + dock.width / 2, dock.y + dock.height / 2, dock.width * 0.1,
+    dock.x + dock.width / 2, dock.y + dock.height / 2, auraR
+  );
+  aura.addColorStop(0, withAlpha('#BFD4FF', 0.30 * config.glow));
+  aura.addColorStop(0.7, withAlpha('#BFD4FF', 0.12 * config.glow));
+  aura.addColorStop(1, withAlpha('#BFD4FF', 0));
+  ctx.fillStyle = aura;
+  ctx.fillRect(dock.x - auraR, dock.y - auraR, dock.width + auraR * 2, dock.height + auraR * 2);
+
+  // 玻璃主体（裁剪在圆角内）
   ctx.save();
   ctx.beginPath();
-  roundRect(ctx, dock.x, dock.y, dock.width, dock.height, dock.radius);
+  roundRectPath(ctx, dock.x, dock.y, dock.width, dock.height, dock.radius);
   ctx.clip();
 
-  // 毛玻璃：将模糊后的背景绘制在 Dock 区域内
   if (blurred !== undefined) {
     ctx.drawImage(blurred, 0, 0, fullW, fullH);
   }
 
-  // 玻璃基色
-  ctx.fillStyle = withAlpha(config.glassColor, config.opacity);
+  // 冷调玻璃基色（上浅下深的垂直渐变）
+  const base: CanvasGradient = ctx.createLinearGradient(0, dock.y, 0, dock.y + dock.height);
+  base.addColorStop(0, withAlpha('#EDF2FF', config.opacity + 0.15));
+  base.addColorStop(1, withAlpha('#D6E0FA', config.opacity));
+  ctx.fillStyle = base;
   ctx.fillRect(dock.x, dock.y, dock.width, dock.height);
 
-  // 顶部高光：模拟玻璃上缘反光（白色渐变）
-  const hlH: number = dock.height * 0.38;
+  // 顶部内高光（柔和）
+  const hlH: number = dock.height * 0.4;
   const hlGrad: CanvasGradient = ctx.createLinearGradient(0, dock.y, 0, dock.y + hlH);
-  hlGrad.addColorStop(0, withAlpha('#FFFFFF', 0.6 * config.highlight));
+  hlGrad.addColorStop(0, withAlpha('#FFFFFF', 0.45 * config.highlight));
   hlGrad.addColorStop(1, withAlpha('#FFFFFF', 0));
   ctx.fillStyle = hlGrad;
   ctx.fillRect(dock.x, dock.y, dock.width, hlH);
 
-  // 底部内侧暗角：增强通透景深
-  const shadeH: number = dock.height * 0.45;
+  // 底部内暗角（通透景深）
+  const shadeH: number = dock.height * 0.5;
   const shadeGrad: CanvasGradient = ctx.createLinearGradient(0, dock.y + dock.height - shadeH, 0, dock.y + dock.height);
-  shadeGrad.addColorStop(0, withAlpha('#000000', 0));
-  shadeGrad.addColorStop(1, withAlpha('#000000', 0.16));
+  shadeGrad.addColorStop(0, withAlpha('#0A1026', 0));
+  shadeGrad.addColorStop(1, withAlpha('#0A1026', 0.18));
   ctx.fillStyle = shadeGrad;
   ctx.fillRect(dock.x, dock.y + dock.height - shadeH, dock.width, shadeH);
 
   ctx.restore();
 
-  // ---- 圆角描边：精致边缘光感 ----
+  // 细腻边缘光线（顶部亮、两侧渐弱）
+  const edgeW: number = Math.max(1, dock.height * 0.010);
+  ctx.save();
+  ctx.beginPath();
+  roundRectPath(ctx, dock.x, dock.y, dock.width, dock.height, dock.radius);
+  ctx.strokeStyle = withAlpha('#FFFFFF', 0.5 * config.glow);
+  ctx.lineWidth = edgeW;
+  ctx.stroke();
+  ctx.restore();
+
+  // 顶部单独描一条更亮的光线（勾勒轮廓）
   if (config.glow > 0.01) {
     ctx.save();
     ctx.beginPath();
-    roundRect(ctx, dock.x, dock.y, dock.width, dock.height, dock.radius);
-    ctx.strokeStyle = withAlpha('#FFFFFF', 0.2 * config.glow);
-    ctx.lineWidth = Math.max(1, dock.height * 0.012);
+    ctx.moveTo(dock.x + dock.radius, dock.y);
+    ctx.lineTo(dock.x + dock.width - dock.radius, dock.y);
+    ctx.strokeStyle = withAlpha('#FFFFFF', 0.8 * config.highlight);
+    ctx.lineWidth = Math.max(1, dock.height * 0.014);
     ctx.stroke();
     ctx.restore();
   }
+}
 
-  // ---- 底部柔光光晕（沉浸光感核心） ----
+/** 液态玻璃 Dock：高亮边缘 + 内景深 + 彩色透光 + 镜面反光 */
+function drawLiquidDock(
+  ctx: OffscreenCanvasRenderingContext2D,
+  dock: DockRect,
+  blurred: image.PixelMap | undefined,
+  config: DockConfig,
+  fullW: number,
+  fullH: number
+): void {
+  // 玻璃主体
+  ctx.save();
+  ctx.beginPath();
+  roundRectPath(ctx, dock.x, dock.y, dock.width, dock.height, dock.radius);
+  ctx.clip();
+
+  if (blurred !== undefined) {
+    ctx.drawImage(blurred, 0, 0, fullW, fullH);
+  }
+
+  // 液态玻璃基色（透光，微带冷白）
+  ctx.fillStyle = withAlpha('#F6F8FF', Math.max(0.12, config.opacity - 0.05));
+  ctx.fillRect(dock.x, dock.y, dock.width, dock.height);
+
+  // 镜面斜向反光（左上→右下 高光带）
+  const sheen: CanvasGradient = ctx.createLinearGradient(dock.x, dock.y, dock.x + dock.width, dock.y + dock.height);
+  sheen.addColorStop(0, withAlpha('#FFFFFF', 0.55 * config.highlight));
+  sheen.addColorStop(0.18, withAlpha('#FFFFFF', 0.22 * config.highlight));
+  sheen.addColorStop(0.5, withAlpha('#FFFFFF', 0));
+  sheen.addColorStop(1, withAlpha('#FFFFFF', 0.05 * config.highlight));
+  ctx.fillStyle = sheen;
+  ctx.fillRect(dock.x, dock.y, dock.width, dock.height);
+
+  // 顶部高亮层
+  const hlH: number = dock.height * 0.5;
+  const hlGrad: CanvasGradient = ctx.createLinearGradient(0, dock.y, 0, dock.y + hlH);
+  hlGrad.addColorStop(0, withAlpha('#FFFFFF', 0.4 * config.highlight));
+  hlGrad.addColorStop(1, withAlpha('#FFFFFF', 0));
+  ctx.fillStyle = hlGrad;
+  ctx.fillRect(dock.x, dock.y, dock.width, hlH);
+
+  // 底部内景深（液态玻璃特有的深色收口）
+  const shadeH: number = dock.height * 0.55;
+  const shadeGrad: CanvasGradient = ctx.createLinearGradient(0, dock.y + dock.height - shadeH, 0, dock.y + dock.height);
+  shadeGrad.addColorStop(0, withAlpha('#10142A', 0));
+  shadeGrad.addColorStop(1, withAlpha('#10142A', 0.30));
+  ctx.fillStyle = shadeGrad;
+  ctx.fillRect(dock.x, dock.y + dock.height - shadeH, dock.width, shadeH);
+
+  ctx.restore();
+
+  // 外轮廓描边（柔和）
+  ctx.save();
+  ctx.beginPath();
+  roundRectPath(ctx, dock.x, dock.y, dock.width, dock.height, dock.radius);
+  ctx.strokeStyle = withAlpha('#FFFFFF', 0.35);
+  ctx.lineWidth = Math.max(1, dock.height * 0.010);
+  ctx.stroke();
+  ctx.restore();
+
+  // 顶部高亮边（液态玻璃标志性光边）
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(dock.x + dock.radius, dock.y);
+  ctx.lineTo(dock.x + dock.width - dock.radius, dock.y);
+  ctx.strokeStyle = withAlpha('#FFFFFF', 0.95 * config.highlight);
+  ctx.lineWidth = Math.max(1.5, dock.height * 0.02);
+  ctx.stroke();
+  ctx.restore();
+
+  // 底部外柔光（光晕）
   if (config.glow > 0.01) {
-    const glowH: number = dock.height * 0.9;
-    const glowColor: string = config.theme === 'dark' ? config.glassColor : '#FFFFFF';
+    const glowH: number = dock.height * 0.8;
     const glowGrad: CanvasGradient = ctx.createLinearGradient(0, dock.y + dock.height, 0, dock.y + dock.height + glowH);
-    glowGrad.addColorStop(0, withAlpha(glowColor, 0.4 * config.glow));
-    glowGrad.addColorStop(1, withAlpha(glowColor, 0));
+    glowGrad.addColorStop(0, withAlpha('#FFFFFF', 0.35 * config.glow));
+    glowGrad.addColorStop(1, withAlpha('#FFFFFF', 0));
     ctx.fillStyle = glowGrad;
     ctx.fillRect(dock.x, dock.y + dock.height, dock.width, glowH);
   }
 }
 
+/** 在 Dock 上绘制一排应用图标（仅预览用） */
+function drawDockIcons(ctx: OffscreenCanvasRenderingContext2D, dock: DockRect, width: number): void {
+  const count: number = 5;
+  const iconSize: number = dock.height * 0.62;
+  const total: number = count * iconSize + (count - 1) * dock.height * 0.14;
+  const startX: number = dock.x + (dock.width - total) / 2;
+  const y: number = dock.y + (dock.height - iconSize) / 2;
+  const colors: string[][] = [
+    ['#5B8DEF', '#8FB6FF'],
+    ['#F2788F', '#FFB3C1'],
+    ['#5BC8A6', '#8FE3C6'],
+    ['#FFB35C', '#FFD98F'],
+    ['#B08BFF', '#D0B8FF']
+  ];
+  for (let i = 0; i < count; i++) {
+    const x: number = startX + i * (iconSize + dock.height * 0.14);
+    const col: string[] = colors[i % 5];
+    drawAppIcon(ctx, x, y, iconSize, i % 4, col, width);
+  }
+}
+
 /** 构建圆角矩形路径 */
-function roundRect(ctx: OffscreenCanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+function roundRectPath(ctx: OffscreenCanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   const radius: number = Math.min(r, w / 2, h / 2);
   ctx.moveTo(x + radius, y);
   ctx.arcTo(x + w, y, x + w, y + h, radius);

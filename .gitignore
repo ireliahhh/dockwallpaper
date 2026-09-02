@@ -1,0 +1,21 @@
+# 构建产物
+**/build/
+/build/
+local.properties
+
+# 依赖
+node_modules/
+oh_modules/
+.hvigor/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# 系统
+.DS_Store
+Thumbs.db
+
+# 日志
+*.log

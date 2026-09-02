@@ -2,7 +2,13 @@
  * Dock 壁纸配置模型
  * 所有尺寸均使用相对比例，方便在不同分辨率下复用
  */
+
+/** 光感风格：harmony=鸿蒙光感，liquid=液态玻璃 */
+export type DockStyle = 'harmony' | 'liquid';
+
 export interface DockConfig {
+  /** 光感风格 */
+  style: DockStyle;
   /** Dock 高度（相对壁纸高度比例，0.10 - 0.22） */
   heightRatio: number;
   /** 左右留白（相对壁纸宽度比例，0.04 - 0.12） */
@@ -25,17 +31,18 @@ export interface DockConfig {
   theme: 'light' | 'dark';
 }
 
-/** 默认配置：iOS 玻璃白 */
+/** 默认配置：鸿蒙光感 */
 export function defaultConfig(): DockConfig {
   return {
+    style: 'harmony',
     heightRatio: 0.16,
-    sideRatio: 0.07,
+    sideRatio: 0.06,
     bottomRatio: 0.03,
-    cornerRatio: 0.4,
+    cornerRatio: 0.42,
     opacity: 0.35,
     blur: 45,
     highlight: 0.85,
-    glow: 0.3,
+    glow: 0.35,
     glassColor: '#FFFFFF',
     theme: 'light'
   };
@@ -44,6 +51,7 @@ export function defaultConfig(): DockConfig {
 /** 深拷贝配置 */
 export function cloneConfig(source: DockConfig): DockConfig {
   return {
+    style: source.style,
     heightRatio: source.heightRatio,
     sideRatio: source.sideRatio,
     bottomRatio: source.bottomRatio,
