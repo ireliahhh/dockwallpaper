@@ -180,24 +180,29 @@ struct Index {
       .width('100%')
       .padding({ left: 18, right: 18, top: 14 })
 
-      // 参数滑杆
+      // 参数滑杆（数值与滑杆位置实时联动）
       Scroll() {
         Column({ space: 4 }) {
-          this.sliderRow('高度', this.config.heightRatio, 0.10, 0.22, 0.01,
+          this.sliderRow('高度', 0.10, 0.22, 0.01,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('heightRatio', v))
-          this.sliderRow('位置', this.config.bottomRatio, 0.02, 0.08, 0.005,
+            (v: number) => this.updateDockField('heightRatio', v),
+            (): number => this.config.heightRatio)
+          this.sliderRow('位置', 0.02, 0.08, 0.005,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('bottomRatio', v))
-          this.sliderRow('圆角', this.config.cornerRatio, 0.2, 0.55, 0.01,
+            (v: number) => this.updateDockField('bottomRatio', v),
+            (): number => this.config.bottomRatio)
+          this.sliderRow('圆角', 0.2, 0.55, 0.01,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('cornerRatio', v))
-          this.sliderRow('透明', this.config.opacity, 0.1, 0.8, 0.01,
+            (v: number) => this.updateDockField('cornerRatio', v),
+            (): number => this.config.cornerRatio)
+          this.sliderRow('透明', 0.1, 0.8, 0.01,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDockField('opacity', v))
-          this.sliderRow('模糊', this.config.blur, 5, 80, 1,
+            (v: number) => this.updateDockField('opacity', v),
+            (): number => this.config.opacity)
+          this.sliderRow('模糊', 5, 80, 1,
             (v: number) => `${Math.round(v)}`,
-            (v: number) => this.updateDockField('blur', v))
+            (v: number) => this.updateDockField('blur', v),
+            (): number => this.config.blur)
         }
         .width('100%')
         .padding({ left: 18, right: 18, top: 6, bottom: 4 })
@@ -240,12 +245,12 @@ struct Index {
   @Builder
   sliderRow(
     title: string,
-    current: number,
     min: number,
     max: number,
     step: number,
     display: (v: number) => string,
-    onApply: (v: number) => void
+    onApply: (v: number) => void,
+    getValue: () => number
   ) {
     Row() {
       Text(title)
@@ -253,7 +258,7 @@ struct Index {
         .fontColor('rgba(255,255,255,0.75)')
         .width(40)
         .textAlign(TextAlign.Start)
-      Slider({ value: current, min: min, max: max, step: step, style: SliderStyle.OutSet })
+      Slider({ value: getValue(), min: min, max: max, step: step, style: SliderStyle.OutSet })
         .layoutWeight(1)
         .selectedColor('#FFFFFF')
         .trackColor('rgba(255,255,255,0.16)')
@@ -261,7 +266,7 @@ struct Index {
         .onChange((value: number, mode: SliderChangeMode) => {
           onApply(value);
         })
-      Text(display(current))
+      Text(display(getValue()))
         .fontSize(11)
         .fontColor('rgba(255,255,255,0.6)')
         .width(40)
