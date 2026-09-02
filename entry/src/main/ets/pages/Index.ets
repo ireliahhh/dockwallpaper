@@ -325,25 +325,25 @@ struct Index {
         Column({ space: 6 }) {
           this.sliderRow('高度', this.config.heightRatio, 0.10, 0.22, 0.01,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDock({ ...this.config, heightRatio: v }))
+            (v: number) => this.updateDock(Object.assign({}, this.config, { heightRatio: v })))
           this.sliderRow('留白', this.config.sideRatio, 0.04, 0.12, 0.005,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDock({ ...this.config, sideRatio: v }))
+            (v: number) => this.updateDock(Object.assign({}, this.config, { sideRatio: v })))
           this.sliderRow('圆角', this.config.cornerRatio, 0.15, 0.55, 0.01,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDock({ ...this.config, cornerRatio: v }))
+            (v: number) => this.updateDock(Object.assign({}, this.config, { cornerRatio: v })))
           this.sliderRow('透明度', this.config.opacity, 0.1, 0.8, 0.01,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDock({ ...this.config, opacity: v }))
+            (v: number) => this.updateDock(Object.assign({}, this.config, { opacity: v })))
           this.sliderRow('模糊', this.config.blur, 5, 80, 1,
             (v: number) => `${Math.round(v)}`,
-            (v: number) => this.updateDock({ ...this.config, blur: v }))
+            (v: number) => this.updateDock(Object.assign({}, this.config, { blur: v })))
           this.sliderRow('高光', this.config.highlight, 0, 1, 0.02,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDock({ ...this.config, highlight: v }))
+            (v: number) => this.updateDock(Object.assign({}, this.config, { highlight: v })))
           this.sliderRow('光晕', this.config.glow, 0, 1, 0.02,
             (v: number) => `${Math.round(v * 100)}%`,
-            (v: number) => this.updateDock({ ...this.config, glow: v }))
+            (v: number) => this.updateDock(Object.assign({}, this.config, { glow: v })))
         }
         .width('100%')
         .padding({ left: 18, right: 18, top: 4, bottom: 10 })
