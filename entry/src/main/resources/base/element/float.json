@@ -1,3 +1,8 @@
 {
-  "float": []
+  "float": [
+    {
+      "name": "default_text_size",
+      "value": "14fp"
+    }
+  ]
 }
