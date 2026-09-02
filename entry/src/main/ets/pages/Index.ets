@@ -211,12 +211,16 @@ struct Index {
       .height(148)
       .scrollBar(BarState.Auto)
 
-      // 操作按钮
-      Row({ space: 10 }) {
-        this.actionButton('选择图片', false, () => this.pickFromAlbum())
-        this.actionButton('桌面截图', false, () => this.pickScreenshot())
-        this.actionButton('保存壁纸', false, () => this.onSaveToAlbum())
-        this.actionButton('设为壁纸', true, () => this.onSetWallpaper())
+      // 操作按钮（两行，避免文字被截断成省略号）
+      Column({ space: 10 }) {
+        Row({ space: 10 }) {
+          this.actionButton('选择图片', false, () => this.pickFromAlbum())
+          this.actionButton('桌面截图', false, () => this.pickScreenshot())
+        }
+        Row({ space: 10 }) {
+          this.actionButton('保存壁纸', false, () => this.onSaveToAlbum())
+          this.actionButton('设为壁纸', true, () => this.onSetWallpaper())
+        }
       }
       .width('100%')
       .padding({ left: 18, right: 18, top: 10, bottom: 16 })
@@ -316,12 +320,13 @@ struct Index {
     const pw = this.previewW;
     const ph = this.previewH;
     try {
-      // 按手机屏比例等比适配（居中）
+      // 按预览比例等比适配（居中）；截图模式跟随截图比例，整张截图完整显示不变形
+      const ratio: number = this.bg.isScreenshot && this.bg.imgW > 0 ? (this.bg.imgH / this.bg.imgW) : PHONE_RATIO;
       let rw = pw;
-      let rh = pw / PHONE_RATIO;
+      let rh = pw / ratio;
       if (rh > ph) {
         rh = ph;
-        rw = ph * PHONE_RATIO;
+        rw = ph * ratio;
       }
       const pm: image.PixelMap = await renderDesktopPreview(
         Math.max(1, Math.round(rw)),
