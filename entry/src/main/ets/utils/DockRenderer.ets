@@ -145,34 +145,42 @@ function drawStatusBar(ctx: OffscreenCanvasRenderingContext2D, width: number): v
   }
 }
 
-/** 桌面图标网格（仅预览用） */
+/** 桌面图标网格（贴近鸿蒙默认桌面布局，仅预览用） */
 function drawIconGrid(ctx: OffscreenCanvasRenderingContext2D, width: number, height: number): void {
   const cols: number = 4;
   const rows: number = 5;
   const gap: number = width * 0.05;
   const iconSize: number = width * 0.15;
   const startX: number = (width - (cols * iconSize + (cols - 1) * gap)) / 2;
-  const topY: number = height * 0.16;
-  const rowGap: number = width * 0.155;
+  const topY: number = height * 0.15;
+  const rowGap: number = width * 0.20;
   const glyphs: number[] = [0, 1, 2, 3];
+  const names: string[][] = [
+    ['相机', '图库', '联系人', '信息'],
+    ['电话', '音乐', '日历', '时钟'],
+    ['天气', '计算器', '设置', '邮件'],
+    ['浏览器', '应用市场', '备忘录', '健康'],
+    ['文件管理', '录音机', '主题', '钱包']
+  ];
   const colors: string[][] = [
-    ['#5B8DEF', '#8FB6FF'],
-    ['#F2788F', '#FFB3C1'],
-    ['#5BC8A6', '#8FE3C6'],
-    ['#B08BFF', '#D0B8FF']
+    ['#3E8EF7', '#7FB5FF'],
+    ['#FF6B81', '#FFA3B3'],
+    ['#2FC5A0', '#7BDFC2'],
+    ['#FFB63F', '#FFD98F'],
+    ['#9B6BFF', '#C2A1FF']
   ];
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const x: number = startX + c * (iconSize + gap);
       const y: number = topY + r * rowGap;
       const g: number = glyphs[(r + c) % 4];
-      const col: string[] = colors[(r + c) % 4];
-      drawAppIcon(ctx, x, y, iconSize, g, col, width);
+      const col: string[] = colors[(r + c) % 5];
+      drawAppIcon(ctx, x, y, iconSize, g, col, width, names[r][c]);
     }
   }
 }
 
-/** 单个应用图标（圆角方块 + 简单图形 + 名称） */
+/** 单个应用图标（圆角渐变方块 + 简单图形 + 真实名称） */
 function drawAppIcon(
   ctx: OffscreenCanvasRenderingContext2D,
   x: number,
@@ -180,7 +188,8 @@ function drawAppIcon(
   size: number,
   glyph: number,
   col: string[],
-  width: number
+  width: number,
+  name: string
 ): void {
   const radius: number = size * 0.22;
   const grad: CanvasGradient = ctx.createLinearGradient(x, y, x + size, y + size);
@@ -226,11 +235,11 @@ function drawAppIcon(
   }
   ctx.restore();
   // 名称
-  ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.font = '400 ' + Math.max(8, Math.round(width * 0.022)) + 'px sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.font = '400 ' + Math.max(8, Math.round(width * 0.021)) + 'px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
-  ctx.fillText('App', x + size / 2, y + size + width * 0.02);
+  ctx.fillText(name, x + size / 2, y + size + width * 0.018);
 }
 
 /** 计算 Dock 圆角矩形区域 */
@@ -319,27 +328,15 @@ function drawHarmonyDock(
 
   ctx.restore();
 
-  // 细腻边缘光线（顶部亮、两侧渐弱）
+  // 细腻边缘光线（柔和勾勒，无硬边白线）
   const edgeW: number = Math.max(1, dock.height * 0.010);
   ctx.save();
   ctx.beginPath();
   roundRectPath(ctx, dock.x, dock.y, dock.width, dock.height, dock.radius);
-  ctx.strokeStyle = withAlpha('#FFFFFF', 0.5 * config.glow);
+  ctx.strokeStyle = withAlpha('#FFFFFF', 0.30 * config.glow);
   ctx.lineWidth = edgeW;
   ctx.stroke();
   ctx.restore();
-
-  // 顶部单独描一条更亮的光线（勾勒轮廓）
-  if (config.glow > 0.01) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.moveTo(dock.x + dock.radius, dock.y);
-    ctx.lineTo(dock.x + dock.width - dock.radius, dock.y);
-    ctx.strokeStyle = withAlpha('#FFFFFF', 0.8 * config.highlight);
-    ctx.lineWidth = Math.max(1, dock.height * 0.014);
-    ctx.stroke();
-    ctx.restore();
-  }
 }
 
 /** 液态玻璃 Dock：高亮边缘 + 内景深 + 彩色透光 + 镜面反光 */
@@ -396,18 +393,18 @@ function drawLiquidDock(
   ctx.save();
   ctx.beginPath();
   roundRectPath(ctx, dock.x, dock.y, dock.width, dock.height, dock.radius);
-  ctx.strokeStyle = withAlpha('#FFFFFF', 0.35);
+  ctx.strokeStyle = withAlpha('#FFFFFF', 0.24);
   ctx.lineWidth = Math.max(1, dock.height * 0.010);
   ctx.stroke();
   ctx.restore();
 
-  // 顶部高亮边（液态玻璃标志性光边）
+  // 顶部柔和光边（液态玻璃标志性光边，柔化避免白线感）
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(dock.x + dock.radius, dock.y);
   ctx.lineTo(dock.x + dock.width - dock.radius, dock.y);
-  ctx.strokeStyle = withAlpha('#FFFFFF', 0.95 * config.highlight);
-  ctx.lineWidth = Math.max(1.5, dock.height * 0.02);
+  ctx.strokeStyle = withAlpha('#FFFFFF', 0.40 * config.highlight);
+  ctx.lineWidth = 1;
   ctx.stroke();
   ctx.restore();
 
@@ -422,24 +419,27 @@ function drawLiquidDock(
   }
 }
 
-/** 在 Dock 上绘制一排应用图标（仅预览用） */
+/** 在 Dock 上绘制一排应用图标（图标大小固定，不随 Dock 高度变化） */
 function drawDockIcons(ctx: OffscreenCanvasRenderingContext2D, dock: DockRect, width: number): void {
   const count: number = 5;
-  const iconSize: number = dock.height * 0.62;
-  const total: number = count * iconSize + (count - 1) * dock.height * 0.14;
+  // 图标固定大小（约占屏宽 7.5%），Dock 变高只增加留白，图标不变
+  const iconSize: number = Math.min(width * 0.075, dock.height * 0.60);
+  const gap: number = width * 0.03;
+  const total: number = count * iconSize + (count - 1) * gap;
   const startX: number = dock.x + (dock.width - total) / 2;
   const y: number = dock.y + (dock.height - iconSize) / 2;
+  const names: string[] = ['电话', '信息', '相机', '浏览器', '设置'];
   const colors: string[][] = [
-    ['#5B8DEF', '#8FB6FF'],
-    ['#F2788F', '#FFB3C1'],
-    ['#5BC8A6', '#8FE3C6'],
-    ['#FFB35C', '#FFD98F'],
-    ['#B08BFF', '#D0B8FF']
+    ['#3E8EF7', '#7FB5FF'],
+    ['#2FC5A0', '#7BDFC2'],
+    ['#FF6B81', '#FFA3B3'],
+    ['#FFB63F', '#FFD98F'],
+    ['#9B6BFF', '#C2A1FF']
   ];
   for (let i = 0; i < count; i++) {
-    const x: number = startX + i * (iconSize + dock.height * 0.14);
+    const x: number = startX + i * (iconSize + gap);
     const col: string[] = colors[i % 5];
-    drawAppIcon(ctx, x, y, iconSize, i % 4, col, width);
+    drawAppIcon(ctx, x, y, iconSize, i % 4, col, width, names[i]);
   }
 }
 
