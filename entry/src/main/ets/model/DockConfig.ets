@@ -31,18 +31,18 @@ export interface DockConfig {
   theme: 'light' | 'dark';
 }
 
-/** 默认配置：鸿蒙光感 */
+/** 默认配置：鸿蒙光感（更窄更靠底更通透，避免压住桌面图标） */
 export function defaultConfig(): DockConfig {
   return {
     style: 'harmony',
-    heightRatio: 0.16,
+    heightRatio: 0.12,
     sideRatio: 0.06,
-    bottomRatio: 0.03,
+    bottomRatio: 0.02,
     cornerRatio: 0.42,
-    opacity: 0.35,
-    blur: 45,
-    highlight: 0.85,
-    glow: 0.35,
+    opacity: 0.28,
+    blur: 55,
+    highlight: 0.95,
+    glow: 0.5,
     glassColor: '#FFFFFF',
     theme: 'light'
   };

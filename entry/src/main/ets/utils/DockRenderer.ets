@@ -278,16 +278,16 @@ function drawDockGlass(
 
 /** Dock 悬浮投影（dock 下方柔和深色阴影，增强悬浮感） */
 function drawDockShadow(ctx: OffscreenCanvasRenderingContext2D, dock: DockRect, color: string, strength: number): void {
-  const shH: number = dock.height * 0.85;
+  const shH: number = dock.height * 0.9;
   const grad: CanvasGradient = ctx.createLinearGradient(0, dock.y + dock.height, 0, dock.y + dock.height + shH);
-  grad.addColorStop(0, withAlpha(color, 0.34 * strength));
-  grad.addColorStop(0.5, withAlpha(color, 0.12 * strength));
+  grad.addColorStop(0, withAlpha(color, 0.40 * strength));
+  grad.addColorStop(0.4, withAlpha(color, 0.16 * strength));
   grad.addColorStop(1, withAlpha(color, 0));
   ctx.fillStyle = grad;
-  ctx.fillRect(dock.x - 5, dock.y + dock.height, dock.width + 10, shH);
+  ctx.fillRect(dock.x - 8, dock.y + dock.height, dock.width + 16, shH);
 }
 
-/** 鸿蒙光感 Dock：通透冷调玻璃 + 悬浮投影 + 环境光晕 + 细腻双层光边 */
+/** 鸿蒙光感 Dock：高通透冷调玻璃 + 强悬浮投影 + 双层环境光晕 + 顶部宽高光 + 双层边缘光 + 斜向折射微光 */
 function drawHarmonyDock(
   ctx: OffscreenCanvasRenderingContext2D,
   dock: DockRect,
@@ -296,22 +296,32 @@ function drawHarmonyDock(
   fullW: number,
   fullH: number
 ): void {
-  // 0. 悬浮投影
-  drawDockShadow(ctx, dock, '#0A1026', 0.9);
+  // 0. 强悬浮投影
+  drawDockShadow(ctx, dock, '#0A1026', 1.1);
 
-  // 1. 背后环境光晕（柔和冷蓝扩散）
-  const auraR: number = dock.width * 0.66;
-  const aura: CanvasGradient = ctx.createRadialGradient(
-    dock.x + dock.width / 2, dock.y + dock.height / 2, dock.width * 0.1,
-    dock.x + dock.width / 2, dock.y + dock.height / 2, auraR
-  );
-  aura.addColorStop(0, withAlpha('#BFD4FF', 0.34 * config.glow));
-  aura.addColorStop(0.6, withAlpha('#BFD4FF', 0.13 * config.glow));
-  aura.addColorStop(1, withAlpha('#BFD4FF', 0));
-  ctx.fillStyle = aura;
-  ctx.fillRect(dock.x - auraR, dock.y - auraR, dock.width + auraR * 2, dock.height + auraR * 2);
+  // 1. 双层环境光晕（内层冷蓝亮核 + 外层淡紫大范围扩散）
+  const cx: number = dock.x + dock.width / 2;
+  const cy: number = dock.y + dock.height / 2;
 
-  // 2. 玻璃主体
+  // 外层大范围淡紫光晕
+  const auraOuterR: number = dock.width * 0.95;
+  const auraOuter: CanvasGradient = ctx.createRadialGradient(cx, cy, dock.width * 0.15, cx, cy, auraOuterR);
+  auraOuter.addColorStop(0, withAlpha('#9DB4FF', 0.22 * config.glow));
+  auraOuter.addColorStop(0.5, withAlpha('#B8A0FF', 0.08 * config.glow));
+  auraOuter.addColorStop(1, withAlpha('#B8A0FF', 0));
+  ctx.fillStyle = auraOuter;
+  ctx.fillRect(dock.x - auraOuterR, dock.y - auraOuterR, dock.width + auraOuterR * 2, dock.height + auraOuterR * 2);
+
+  // 内层冷蓝亮光晕
+  const auraInnerR: number = dock.width * 0.6;
+  const auraInner: CanvasGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, auraInnerR);
+  auraInner.addColorStop(0, withAlpha('#C8DCFF', 0.40 * config.glow));
+  auraInner.addColorStop(0.6, withAlpha('#B8CCFF', 0.14 * config.glow));
+  auraInner.addColorStop(1, withAlpha('#B8CCFF', 0));
+  ctx.fillStyle = auraInner;
+  ctx.fillRect(dock.x - auraInnerR, dock.y - auraInnerR, dock.width + auraInnerR * 2, dock.height + auraInnerR * 2);
+
+  // 2. 玻璃主体（高通透）
   ctx.save();
   ctx.beginPath();
   roundRectPath(ctx, dock.x, dock.y, dock.width, dock.height, dock.radius);
@@ -321,51 +331,72 @@ function drawHarmonyDock(
     ctx.drawImage(blurred, 0, 0, fullW, fullH);
   }
 
-  // 冷调玻璃基色（上浅下深，通透）
+  // 极淡冷调基色（高通透，低不透明度，让背景清晰透出）
   const base: CanvasGradient = ctx.createLinearGradient(0, dock.y, 0, dock.y + dock.height);
-  base.addColorStop(0, withAlpha('#EEF3FF', Math.min(0.9, config.opacity + 0.22)));
-  base.addColorStop(1, withAlpha('#D3DDF7', config.opacity + 0.05));
+  base.addColorStop(0, withAlpha('#E8EEFF', Math.min(0.55, config.opacity * 0.9)));
+  base.addColorStop(0.5, withAlpha('#D8E2F8', config.opacity * 0.5));
+  base.addColorStop(1, withAlpha('#C8D4F0', config.opacity * 0.7));
   ctx.fillStyle = base;
   ctx.fillRect(dock.x, dock.y, dock.width, dock.height);
 
-  // 顶部宽高光（顶部发光，向下渐隐）
-  const hlH: number = dock.height * 0.55;
+  // 顶部强宽高光（多层：极亮顶边 → 柔和过渡 → 渐隐）
+  const hlH: number = dock.height * 0.65;
   const hlGrad: CanvasGradient = ctx.createLinearGradient(0, dock.y, 0, dock.y + hlH);
-  hlGrad.addColorStop(0, withAlpha('#FFFFFF', 0.5 * config.highlight));
-  hlGrad.addColorStop(0.4, withAlpha('#FFFFFF', 0.14 * config.highlight));
+  hlGrad.addColorStop(0, withAlpha('#FFFFFF', 0.70 * config.highlight));
+  hlGrad.addColorStop(0.15, withAlpha('#FFFFFF', 0.38 * config.highlight));
+  hlGrad.addColorStop(0.5, withAlpha('#FFFFFF', 0.12 * config.highlight));
   hlGrad.addColorStop(1, withAlpha('#FFFFFF', 0));
   ctx.fillStyle = hlGrad;
   ctx.fillRect(dock.x, dock.y, dock.width, hlH);
 
-  // 底部内暗角（景深）
-  const shadeH: number = dock.height * 0.5;
+  // 斜向折射微光带（玻璃质感，左上→右下淡光）
+  const sheen: CanvasGradient = ctx.createLinearGradient(dock.x, dock.y, dock.x + dock.width * 0.7, dock.y + dock.height);
+  sheen.addColorStop(0, withAlpha('#FFFFFF', 0.14 * config.highlight));
+  sheen.addColorStop(0.4, withAlpha('#FFFFFF', 0.03 * config.highlight));
+  sheen.addColorStop(0.7, withAlpha('#FFFFFF', 0.08 * config.highlight));
+  sheen.addColorStop(1, withAlpha('#FFFFFF', 0));
+  ctx.fillStyle = sheen;
+  ctx.fillRect(dock.x, dock.y, dock.width, dock.height);
+
+  // 底部内暗角（景深收口）
+  const shadeH: number = dock.height * 0.55;
   const shadeGrad: CanvasGradient = ctx.createLinearGradient(0, dock.y + dock.height - shadeH, 0, dock.y + dock.height);
   shadeGrad.addColorStop(0, withAlpha('#0A1026', 0));
-  shadeGrad.addColorStop(1, withAlpha('#0A1026', 0.16));
+  shadeGrad.addColorStop(1, withAlpha('#0A1026', 0.20));
   ctx.fillStyle = shadeGrad;
   ctx.fillRect(dock.x, dock.y + dock.height - shadeH, dock.width, shadeH);
 
   ctx.restore();
 
-  // 3. 玻璃边缘：外层柔和白描边 + 内层细亮描边（厚度感）
+  // 3. 双层边缘光（外圈亮白描边 + 内圈细光，模拟玻璃厚度）
   ctx.save();
   ctx.beginPath();
   roundRectPath(ctx, dock.x, dock.y, dock.width, dock.height, dock.radius);
-  ctx.strokeStyle = withAlpha('#FFFFFF', 0.30 * config.glow);
-  ctx.lineWidth = Math.max(1, dock.height * 0.010);
+  ctx.strokeStyle = withAlpha('#FFFFFF', 0.48 * config.glow);
+  ctx.lineWidth = Math.max(1.5, dock.height * 0.014);
   ctx.stroke();
   ctx.restore();
 
   ctx.save();
   ctx.beginPath();
-  roundRectPath(ctx, dock.x + 0.5, dock.y + 0.5, dock.width - 1, dock.height - 1, Math.max(0, dock.radius - 1));
-  ctx.strokeStyle = withAlpha('#FFFFFF', 0.12);
+  roundRectPath(ctx, dock.x + 1, dock.y + 1, dock.width - 2, dock.height - 2, Math.max(0, dock.radius - 1));
+  ctx.strokeStyle = withAlpha('#FFFFFF', 0.20);
   ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+
+  // 4. 顶部极细亮线（柔和发光，鸿蒙光感标志）
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(dock.x + dock.radius * 0.6, dock.y + 0.5);
+  ctx.lineTo(dock.x + dock.width - dock.radius * 0.6, dock.y + 0.5);
+  ctx.strokeStyle = withAlpha('#FFFFFF', 0.65 * config.highlight);
+  ctx.lineWidth = 1.2;
   ctx.stroke();
   ctx.restore();
 }
 
-/** 液态玻璃 Dock：高亮镜面反光 + 通透透光 + 立体边缘 + 标志性顶光 */
+/** 液态玻璃 Dock：强镜面反光 + 高亮边缘 + 立体景深 + 标志性顶光 + 高通透 */
 function drawLiquidDock(
   ctx: OffscreenCanvasRenderingContext2D,
   dock: DockRect,
@@ -374,10 +405,10 @@ function drawLiquidDock(
   fullW: number,
   fullH: number
 ): void {
-  // 0. 悬浮投影
-  drawDockShadow(ctx, dock, '#05070F', 0.95);
+  // 0. 强悬浮投影
+  drawDockShadow(ctx, dock, '#05070F', 1.2);
 
-  // 1. 玻璃主体
+  // 1. 玻璃主体（高通透）
   ctx.save();
   ctx.beginPath();
   roundRectPath(ctx, dock.x, dock.y, dock.width, dock.height, dock.radius);
@@ -387,70 +418,73 @@ function drawLiquidDock(
     ctx.drawImage(blurred, 0, 0, fullW, fullH);
   }
 
-  // 透光基色（微带冷白，保留背景透出）
-  ctx.fillStyle = withAlpha('#F8FAFF', Math.max(0.10, config.opacity - 0.06));
+  // 极低不透明度基色（高通透，背景清晰可见）
+  ctx.fillStyle = withAlpha('#F0F4FF', Math.max(0.06, config.opacity * 0.45));
   ctx.fillRect(dock.x, dock.y, dock.width, dock.height);
 
-  // 镜面斜向反光（左上→右下高光带，液态玻璃标志）
+  // 强镜面斜向反光（液态玻璃标志：左上极亮 → 中段淡 → 右下微光）
   const sheen: CanvasGradient = ctx.createLinearGradient(dock.x, dock.y, dock.x + dock.width, dock.y + dock.height);
-  sheen.addColorStop(0, withAlpha('#FFFFFF', 0.62 * config.highlight));
-  sheen.addColorStop(0.16, withAlpha('#FFFFFF', 0.28 * config.highlight));
-  sheen.addColorStop(0.45, withAlpha('#FFFFFF', 0.02 * config.highlight));
-  sheen.addColorStop(0.78, withAlpha('#FFFFFF', 0.10 * config.highlight));
-  sheen.addColorStop(1, withAlpha('#FFFFFF', 0.02 * config.highlight));
+  sheen.addColorStop(0, withAlpha('#FFFFFF', 0.82 * config.highlight));
+  sheen.addColorStop(0.10, withAlpha('#FFFFFF', 0.45 * config.highlight));
+  sheen.addColorStop(0.30, withAlpha('#FFFFFF', 0.12 * config.highlight));
+  sheen.addColorStop(0.55, withAlpha('#FFFFFF', 0.02 * config.highlight));
+  sheen.addColorStop(0.78, withAlpha('#FFFFFF', 0.18 * config.highlight));
+  sheen.addColorStop(1, withAlpha('#FFFFFF', 0.03 * config.highlight));
   ctx.fillStyle = sheen;
   ctx.fillRect(dock.x, dock.y, dock.width, dock.height);
 
   // 顶部高光渐变
-  const hlH: number = dock.height * 0.5;
+  const hlH: number = dock.height * 0.55;
   const hlGrad: CanvasGradient = ctx.createLinearGradient(0, dock.y, 0, dock.y + hlH);
-  hlGrad.addColorStop(0, withAlpha('#FFFFFF', 0.45 * config.highlight));
+  hlGrad.addColorStop(0, withAlpha('#FFFFFF', 0.55 * config.highlight));
+  hlGrad.addColorStop(0.3, withAlpha('#FFFFFF', 0.18 * config.highlight));
   hlGrad.addColorStop(1, withAlpha('#FFFFFF', 0));
   ctx.fillStyle = hlGrad;
   ctx.fillRect(dock.x, dock.y, dock.width, hlH);
 
-  // 底部内景深（深色收口）
-  const shadeH: number = dock.height * 0.55;
+  // 底部内景深（强深色收口，立体感）
+  const shadeH: number = dock.height * 0.6;
   const shadeGrad: CanvasGradient = ctx.createLinearGradient(0, dock.y + dock.height - shadeH, 0, dock.y + dock.height);
-  shadeGrad.addColorStop(0, withAlpha('#10142A', 0));
-  shadeGrad.addColorStop(1, withAlpha('#10142A', 0.32));
+  shadeGrad.addColorStop(0, withAlpha('#0A0E22', 0));
+  shadeGrad.addColorStop(1, withAlpha('#0A0E22', 0.42));
   ctx.fillStyle = shadeGrad;
   ctx.fillRect(dock.x, dock.y + dock.height - shadeH, dock.width, shadeH);
 
   ctx.restore();
 
-  // 2. 边缘：外层高亮白描边 + 内层暗描边（立体玻璃厚度）
+  // 2. 双层边缘（外圈高亮白边 + 内圈暗边，立体玻璃厚度）
   ctx.save();
   ctx.beginPath();
   roundRectPath(ctx, dock.x, dock.y, dock.width, dock.height, dock.radius);
-  ctx.strokeStyle = withAlpha('#FFFFFF', 0.42);
-  ctx.lineWidth = Math.max(1, dock.height * 0.010);
+  ctx.strokeStyle = withAlpha('#FFFFFF', 0.62);
+  ctx.lineWidth = Math.max(1.5, dock.height * 0.014);
   ctx.stroke();
   ctx.restore();
 
   ctx.save();
   ctx.beginPath();
-  roundRectPath(ctx, dock.x + 0.5, dock.y + 0.5, dock.width - 1, dock.height - 1, Math.max(0, dock.radius - 1));
-  ctx.strokeStyle = withAlpha('#10142A', 0.20);
+  roundRectPath(ctx, dock.x + 1, dock.y + 1, dock.width - 2, dock.height - 2, Math.max(0, dock.radius - 1));
+  ctx.strokeStyle = withAlpha('#0A0E22', 0.28);
   ctx.lineWidth = 1;
   ctx.stroke();
   ctx.restore();
 
-  // 3. 顶部标志性光边（细而亮，下方柔和渐隐）
+  // 3. 顶部标志性亮边（细而极亮，液态玻璃标志）
   ctx.save();
   ctx.beginPath();
-  ctx.moveTo(dock.x + dock.radius, dock.y);
-  ctx.lineTo(dock.x + dock.width - dock.radius, dock.y);
-  ctx.strokeStyle = withAlpha('#FFFFFF', 0.60 * config.highlight);
-  ctx.lineWidth = 1;
+  ctx.moveTo(dock.x + dock.radius * 0.5, dock.y + 0.5);
+  ctx.lineTo(dock.x + dock.width - dock.radius * 0.5, dock.y + 0.5);
+  ctx.strokeStyle = withAlpha('#FFFFFF', 0.88 * config.highlight);
+  ctx.lineWidth = 1.5;
   ctx.stroke();
   ctx.restore();
 
-  // 4. 底部外柔光（光晕）
+  // 4. 底部外柔光（光晕扩散）
   if (config.glow > 0.01) {
-    const glowH: number = dock.height * 0.8;
+    const glowH: number = dock.height * 0.9;
     const glowGrad: CanvasGradient = ctx.createLinearGradient(0, dock.y + dock.height, 0, dock.y + dock.height + glowH);
-    glowGrad.addColorStop(0, withAlpha('#FFFFFF', 0.32 * config.glow));
+    glowGrad.addColorStop(0, withAlpha('#FFFFFF', 0.40 * config.glow));
+    glowGrad.addColorStop(0.4, withAlpha('#FFFFFF', 0.12 * config.glow));
     glowGrad.addColorStop(1, withAlpha('#FFFFFF', 0));
     ctx.fillStyle = glowGrad;
     ctx.fillRect(dock.x, dock.y + dock.height, dock.width, glowH);

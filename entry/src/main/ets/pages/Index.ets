@@ -3,7 +3,7 @@
  *  - 全屏沉浸光感背景
  *  - 手机桌面实时预览（壁纸 + 桌面图标 + 光感 Dock）
  *  - 悬浮光感控制面板：两种效果切换（鸿蒙光感 / 液态玻璃）+ 参数滑杆
- *  - 从图库选择照片作为壁纸背景
+ *  - 从图库选择照片作为壁纸背景 / 选择桌面截图实时参照
  *  - 一键保存壁纸到相册 / 设为系统壁纸
  *
  * 说明：鸿蒙 7.0 (API 26) 的官方沉浸光感 systemMaterial 待 CI 升级后接入，
@@ -26,18 +26,17 @@ const PHONE_RATIO: number = 9 / 19;
 @Entry
 @Component
 struct Index {
-  private settings: RenderingContextSettings = new RenderingContextSettings(true);
-  private previewCtx: CanvasRenderingContext2D = new CanvasRenderingContext2D(this.settings);
-
   @State config: DockConfig = defaultConfig();
   @State bg: BackgroundData = { pixelMap: undefined, imgW: 0, imgH: 0, isScreenshot: false };
   @State saveBusy: boolean = false;
-  @State previewW: number = 0;
-  @State previewH: number = 0;
+  @State previewPixelMap: image.PixelMap | undefined = undefined;
 
-  private ready: boolean = false;
   private renderTimer: number = -1;
   private renderToken: number = 0;
+
+  aboutToAppear(): void {
+    this.scheduleRender();
+  }
 
   build() {
     Stack() {
@@ -129,16 +128,14 @@ struct Index {
   @Builder
   buildPhonePreview() {
     Stack() {
-      // 手机模拟屏
-      Canvas(this.previewCtx)
-        .width('100%')
-        .height('100%')
-        .onReady(() => this.onPreviewReady())
-
-      // 未选图时的引导
-      if (this.bg.pixelMap === undefined) {
+      if (this.previewPixelMap !== undefined) {
+        Image(this.previewPixelMap)
+          .width('100%')
+          .height('100%')
+          .objectFit(ImageFit.Contain)
+      } else {
         Column() {
-          Text('轻触下方「选择图片」')
+          Text('轻触下方「选择截图」')
             .fontSize(12)
             .fontColor('rgba(255,255,255,0.55)')
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
@@ -146,7 +143,8 @@ struct Index {
             .borderRadius(14)
         }
         .width('100%')
-        .position({ y: '60%' })
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
       }
     }
     .layoutWeight(1)
@@ -155,16 +153,7 @@ struct Index {
     .clip(true)
     .border({ width: 1, color: 'rgba(255,255,255,0.16)' })
     .shadow({ radius: 40, color: 'rgba(0,0,0,0.55)', offsetY: 12 })
-    .margin({ top: 14, bottom: 14 })
-    .onAreaChange((oldValue: Area, newValue: Area) => {
-      const w = Number(newValue.width);
-      const h = Number(newValue.height);
-      if (w > 0 && h > 0 && (w !== this.previewW || h !== this.previewH)) {
-        this.previewW = w;
-        this.previewH = h;
-        this.scheduleRender();
-      }
-    })
+    .margin({ top: 10, bottom: 10 })
   }
 
   // ===================== 控制面板 =====================
@@ -211,11 +200,11 @@ struct Index {
       .height(148)
       .scrollBar(BarState.Auto)
 
-      // 操作按钮（两行，避免文字被截断成省略号）
+      // 操作按钮（两行，选择截图/选择壁纸在前）
       Column({ space: 10 }) {
         Row({ space: 10 }) {
-          this.actionButton('选择图片', false, () => this.pickFromAlbum())
-          this.actionButton('桌面截图', false, () => this.pickScreenshot())
+          this.actionButton('选择截图', false, () => this.pickScreenshot())
+          this.actionButton('选择壁纸', false, () => this.pickFromAlbum())
         }
         Row({ space: 10 }) {
           this.actionButton('保存壁纸', false, () => this.onSaveToAlbum())
@@ -297,11 +286,6 @@ struct Index {
 
   // ===================== 逻辑 =====================
 
-  private onPreviewReady(): void {
-    this.ready = true;
-    this.scheduleRender();
-  }
-
   private scheduleRender(): void {
     if (this.renderTimer !== -1) {
       clearTimeout(this.renderTimer);
@@ -311,37 +295,19 @@ struct Index {
     }, 80);
   }
 
-  /** 实时渲染手机桌面预览（壁纸 + 图标 + Dock） */
+  /** 实时渲染手机桌面预览（Image Contain 模式天然不拉伸） */
   private async doRender(): Promise<void> {
-    if (!this.ready || this.previewW <= 0 || this.previewH <= 0) {
-      return;
-    }
     const token: number = ++this.renderToken;
-    const pw = this.previewW;
-    const ph = this.previewH;
     try {
-      // 按预览比例等比适配（居中）；截图模式跟随截图比例，整张截图完整显示不变形
+      // 截图模式跟随截图比例，普通模式用手机屏比例
       const ratio: number = this.bg.isScreenshot && this.bg.imgW > 0 ? (this.bg.imgH / this.bg.imgW) : PHONE_RATIO;
-      let rw = pw;
-      let rh = pw / ratio;
-      if (rh > ph) {
-        rh = ph;
-        rw = ph * ratio;
-      }
-      const pm: image.PixelMap = await renderDesktopPreview(
-        Math.max(1, Math.round(rw)),
-        Math.max(1, Math.round(rh)),
-        this.config,
-        this.bg
-      );
+      const pw: number = 720;
+      const ph: number = Math.max(1, Math.round(pw / ratio));
+      const pm: image.PixelMap = await renderDesktopPreview(pw, ph, this.config, this.bg);
       if (token !== this.renderToken) {
         return;
       }
-      const ctx = this.previewCtx;
-      ctx.clearRect(0, 0, pw, ph);
-      const dx = (pw - rw) / 2;
-      const dy = (ph - rh) / 2;
-      ctx.drawImage(pm, dx, dy, rw, rh);
+      this.previewPixelMap = pm;
     } catch (err) {
       hilog.error(0x0000, TAG, 'render failed %{public}s', JSON.stringify(err));
     }
@@ -375,7 +341,7 @@ struct Index {
     this.scheduleRender();
   }
 
-  /** 从图库选择照片（fd 方式读取，兼容各类图片格式） */
+  /** 从图库选择壁纸照片（fd 方式读取，兼容各类图片格式） */
   private async pickFromAlbum(): Promise<void> {
     try {
       const picker = new photoAccessHelper.PhotoViewPicker();
@@ -387,7 +353,6 @@ struct Index {
         return;
       }
       const uri: string = result.photoUris[0];
-      // 用 fd 打开，比直接传 uri 更稳（兼容 HEIC / 云图 / 其他应用图片）
       const file = fs.openSync(uri, fs.OpenMode.READ_ONLY);
       let source: image.ImageSource | undefined = undefined;
       try {
@@ -410,7 +375,7 @@ struct Index {
       }
     } catch (err) {
       hilog.error(0x0000, TAG, 'pick failed %{public}s', JSON.stringify(err));
-      promptAction.showToast({ message: '选择图片失败，请重试' });
+      promptAction.showToast({ message: '选择壁纸失败，请重试' });
     }
   }
 
@@ -476,7 +441,7 @@ struct Index {
       return;
     }
     if (this.bg.isScreenshot) {
-      promptAction.showToast({ message: '当前为桌面截图预览，请先点「选择图片」选取新壁纸再保存' });
+      promptAction.showToast({ message: '当前为截图预览，请先点「选择壁纸」选取新壁纸再保存' });
       return;
     }
     this.saveBusy = true;
@@ -503,7 +468,7 @@ struct Index {
       return;
     }
     if (this.bg.isScreenshot) {
-      promptAction.showToast({ message: '当前为桌面截图预览，请先点「选择图片」选取新壁纸再设置' });
+      promptAction.showToast({ message: '当前为截图预览，请先点「选择壁纸」选取新壁纸再设置' });
       return;
     }
     this.saveBusy = true;
